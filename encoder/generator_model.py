@@ -63,7 +63,9 @@ class Generator:
         # Implement stochastic clipping similar to what is described in https://arxiv.org/abs/1702.04782
         # (Slightly different in that the latent space is normal gaussian here and was uniform in [-1, 1] in that paper,
         # so we clip any vector components outside of [-2, 2]. It seems fine, but I haven't done an ablation check.)
-        clipping_mask = tf.math.logical_or(self.dlatent_variable > clipping_threshold, self.dlatent_variable < -clipping_threshold)
+        ct_min = -0.5
+        ct_max = 1.5
+        clipping_mask = tf.math.logical_or(self.dlatent_variable > ct_max, self.dlatent_variable < ct_min)
         clipped_values = tf.where(clipping_mask, tf.random_normal(shape=self.dlatent_variable.shape), self.dlatent_variable)
         self.stochastic_clip_op = tf.assign(self.dlatent_variable, clipped_values)
 
