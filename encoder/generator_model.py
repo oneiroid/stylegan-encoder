@@ -66,8 +66,8 @@ class Generator:
         ct_min = -0.5
         ct_max = 1.5
         clipping_mask = tf.math.logical_or(self.dlatent_variable > ct_max, self.dlatent_variable < ct_min)
-        #tf.random_normal(shape=self.dlatent_variable.shape, stddev=0.1, mean=0.)
-        clip_val_distr = tf.random_gamma(shape=(1,512), alpha=2, beta=3) * 1.2 / 2.5 - 0.3
+        #   tf.random_normal(shape=self.dlatent_variable.shape, stddev=0.1, mean=0.)
+        clip_val_distr = tf.random_gamma(shape=self.dlatent_variable.shape, alpha=2, beta=3) * 1.2 / 2.5 - 0.3
         clipped_values = tf.where(clipping_mask, clip_val_distr, self.dlatent_variable)
         self.stochastic_clip_op = tf.assign(self.dlatent_variable, clipped_values)
 
