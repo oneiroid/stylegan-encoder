@@ -12,7 +12,7 @@ import traceback
 def load_images(images_list, image_size=256):
     loaded_images = list()
     for img_path in images_list:
-      img = PIL.Image.open(img_path).convert('RGB').resize((image_size,image_size),PIL.Image.LANCZOS)
+      img = PIL.Image.open(img_path).convert('L').convert('RGB').resize((image_size,image_size),PIL.Image.LANCZOS)
       img = np.array(img)
       img = np.expand_dims(img, 0)
       loaded_images.append(img)
@@ -106,6 +106,8 @@ class PerceptualModel:
         generated_image_tensor = generator.generated_image
         generated_image = tf.image.resize_nearest_neighbor(generated_image_tensor,
                                                                   (self.img_size, self.img_size), align_corners=True)
+        #generated_image = tf.image.adjust_saturation(generated_image, 0)
+        generated_image = tf.image.grayscale_to_rgb(tf.image.rgb_to_grayscale(generated_image))
 
         self.ref_img = tf.get_variable('ref_img', shape=generated_image.shape,
                                                 dtype='float32', initializer=tf.initializers.zeros())
@@ -175,6 +177,7 @@ class PerceptualModel:
     def set_reference_images(self, images_list):
         assert(len(images_list) != 0 and len(images_list) <= self.batch_size)
         loaded_image = load_images(images_list, self.img_size)
+        loaded_image = tf.image.adjust_saturation(loaded_image, 0)
         image_features = None
         if self.perceptual_model is not None:
             image_features = self.perceptual_model.predict_on_batch(preprocess_input(loaded_image))
