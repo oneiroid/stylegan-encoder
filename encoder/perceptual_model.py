@@ -177,7 +177,6 @@ class PerceptualModel:
     def set_reference_images(self, images_list):
         assert(len(images_list) != 0 and len(images_list) <= self.batch_size)
         loaded_image = load_images(images_list, self.img_size)
-        loaded_image = tf.image.adjust_saturation(loaded_image, 0)
         image_features = None
         if self.perceptual_model is not None:
             image_features = self.perceptual_model.predict_on_batch(preprocess_input(loaded_image))
