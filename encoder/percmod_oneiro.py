@@ -1,4 +1,5 @@
-import os
+import os, sys
+sys.path.append('C:\\workspace\\src')
 import bz2
 import PIL.Image
 import numpy as np
@@ -8,8 +9,9 @@ from keras.utils import get_file
 from keras.applications.vgg16 import VGG16, preprocess_input
 import keras.backend as K
 import traceback
+from lib.facenet.src import facenet
 
-def load_images(images_list, image_size=256):
+def load_images(images_list, image_size=160):
     loaded_images = list()
     for img_path in images_list:
       img = PIL.Image.open(img_path).convert('RGB').resize((image_size,image_size),PIL.Image.LANCZOS)
@@ -41,14 +43,13 @@ class PerceptualModel:
         self.decay_rate = args.decay_rate
         self.decay_steps = args.decay_steps
         self.img_size = args.image_size
-        self.layer = args.use_vgg_layer
-        self.vgg_loss = args.use_vgg_loss
+        self.fn_loss = args.use_fn_loss
+        self.fn_model_path = args.fn_model
+
         self.face_mask = args.face_mask
         self.use_grabcut = args.use_grabcut
         self.scale_mask = args.scale_mask
         self.mask_dir = args.mask_dir
-        if (self.layer <= 0 or self.vgg_loss <= self.epsilon):
-            self.vgg_loss = None
         self.pixel_loss = args.use_pixel_loss
         if (self.pixel_loss <= self.epsilon):
             self.pixel_loss = None
@@ -106,6 +107,7 @@ class PerceptualModel:
         generated_image_tensor = generator.generated_image
         generated_image = tf.image.resize_nearest_neighbor(generated_image_tensor,
                                                                   (self.img_size, self.img_size), align_corners=True)
+        generated_image_w = tf.image.per_image_standardization(generated_image)
         #generated_image = tf.image.adjust_saturation(generated_image, 0)
         #generated_image = tf.image.grayscale_to_rgb(tf.image.rgb_to_grayscale(generated_image))
 
@@ -116,22 +118,30 @@ class PerceptualModel:
         self.add_placeholder("ref_img")
         self.add_placeholder("ref_weight")
 
-        if (self.vgg_loss is not None):
-            vgg16 = VGG16(include_top=False, input_shape=(self.img_size, self.img_size, 3))
-            self.perceptual_model = Model(vgg16.input, vgg16.layers[self.layer].output)
-            generated_img_features = self.perceptual_model(preprocess_input(self.ref_weight * generated_image))
-            self.ref_img_features = tf.get_variable('ref_img_features', shape=generated_img_features.shape,
+        if (self.fn_loss is not None):
+            with tf.gfile.FastGFile(self.fn_model_path, 'rb') as f:
+                graph_def = tf.GraphDef()
+                graph_def.ParseFromString(f.read())
+                tf.import_graph_def(graph_def, input_map={'input': generated_image_w, 'phase_train': tf.constant(False)}, name='')
+            # self.perceptual_model = facenet.load_model(self.fn_model_path, input_map={'input': generated_image_w, 'phase_train': tf.constant(False)})
+
+            self.images_placeholder = self.sess.graph.get_tensor_by_name("input:0")
+            self.embeddings = self.sess.graph.get_tensor_by_name("embeddings:0")
+            #self.embeddings.set_shape((1, 512))
+            self.phase_train_placeholder = self.sess.graph.get_tensor_by_name("phase_train:0")
+
+            self.ref_img_features = tf.get_variable('ref_img_features', shape=(1, 512),
                                                 dtype='float32', initializer=tf.initializers.zeros())
-            self.features_weight = tf.get_variable('features_weight', shape=generated_img_features.shape,
+            self.features_weight = tf.get_variable('features_weight', shape=(1, 512),
                                                dtype='float32', initializer=tf.initializers.zeros())
-            self.sess.run([self.features_weight.initializer, self.features_weight.initializer])
+            self.sess.run([self.ref_img_features.initializer, self.features_weight.initializer])
             self.add_placeholder("ref_img_features")
             self.add_placeholder("features_weight")
 
         self.loss = 0
         # L1 loss on VGG16 features
-        if (self.vgg_loss is not None):
-            self.loss += self.vgg_loss * tf_custom_l1_loss(self.features_weight * self.ref_img_features, self.features_weight * generated_img_features)
+        if (self.fn_loss is not None):
+            self.loss += self.fn_loss * tf_custom_l1_loss(self.features_weight * self.ref_img_features, self.features_weight * self.embeddings)
         # + logcosh loss on image pixels
         if (self.pixel_loss is not None):
             self.loss += self.pixel_loss * tf_custom_logcosh_loss(self.ref_weight * self.ref_img, self.ref_weight * generated_image)
@@ -178,8 +188,10 @@ class PerceptualModel:
         assert(len(images_list) != 0 and len(images_list) <= self.batch_size)
         loaded_image = load_images(images_list, self.img_size)
         image_features = None
-        if self.perceptual_model is not None:
-            image_features = self.perceptual_model.predict_on_batch(preprocess_input(loaded_image))
+        if self.perceptual_model is not None or True:
+            imgs = tf.image.per_image_standardization(np.array(loaded_image)).eval(session=self.sess)
+            feed_dict = { self.images_placeholder:  np.array(imgs), self.phase_train_placeholder:False}
+            image_features = self.sess.run(self.embeddings, feed_dict=feed_dict)
             weight_mask = np.ones(self.features_weight.shape)
 
         if self.face_mask:
@@ -238,6 +250,7 @@ class PerceptualModel:
     def optimize(self, vars_to_optimize, iterations=200):
         vars_to_optimize = vars_to_optimize if isinstance(vars_to_optimize, list) else [vars_to_optimize]
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        writer = tf.summary.FileWriter('./graphs', self.sess.graph)
         min_op = optimizer.minimize(self.loss, var_list=[vars_to_optimize])
         self.sess.run(tf.variables_initializer(optimizer.variables()))
         self.sess.run(self._reset_global_step)

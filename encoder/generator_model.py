@@ -24,7 +24,7 @@ def create_variable_for_generator(name, batch_size, tiled_dlatent, model_scale=1
 
 
 class Generator:
-    def __init__(self, model, batch_size, clipping_threshold=2, tiled_dlatent=False, model_res=1024, randomize_noise=False):
+    def __init__(self, model, batch_size, clip_range=[-0.5, 1.5], tiled_dlatent=False, model_res=1024, randomize_noise=False):
         self.batch_size = batch_size
         self.tiled_dlatent=tiled_dlatent
         self.model_scale = int(2*(math.log(model_res,2)-1)) # For example, 1024 -> 18
@@ -63,11 +63,12 @@ class Generator:
         # Implement stochastic clipping similar to what is described in https://arxiv.org/abs/1702.04782
         # (Slightly different in that the latent space is normal gaussian here and was uniform in [-1, 1] in that paper,
         # so we clip any vector components outside of [-2, 2]. It seems fine, but I haven't done an ablation check.)
-        ct_min = -0.5
-        ct_max = 1.5
+        ct_min = clip_range[0]
+        ct_max = clip_range[1]
         clipping_mask = tf.math.logical_or(self.dlatent_variable > ct_max, self.dlatent_variable < ct_min)
-        #   tf.random_normal(shape=self.dlatent_variable.shape, stddev=0.1, mean=0.)
-        clip_val_distr = tf.random_gamma(shape=self.dlatent_variable.shape, alpha=2, beta=3) * 1.2 / 2.5 - 0.3
+        clip_val_distr = tf.random_uniform(shape=self.dlatent_variable.shape, minval=ct_min, maxval=ct_max)
+        # tf.random_normal(shape=self.dlatent_variable.shape, stddev=0.1, mean=0.)
+        # clip_val_distr = tf.random_gamma(shape=self.dlatent_variable.shape, alpha=2, beta=3) * 1.2 / 2.5 - 0.3
         clipped_values = tf.where(clipping_mask, clip_val_distr, self.dlatent_variable)
         self.stochastic_clip_op = tf.assign(self.dlatent_variable, clipped_values)
 

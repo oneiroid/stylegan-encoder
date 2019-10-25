@@ -8,7 +8,7 @@ import dnnlib
 import dnnlib.tflib as tflib
 import config
 from encoder.generator_model import Generator
-from encoder.perceptual_model import PerceptualModel, load_images
+from encoder.percmod_oneiro import PerceptualModel, load_images
 from keras.models import load_model
 
 def split_to_batches(l, n):
@@ -29,22 +29,23 @@ def main():
     parser.add_argument('--batch_size', default=1, help='Batch size for generator and perceptual model', type=int)
 
     # Perceptual model params
-    parser.add_argument('--image_size', default=256, help='Size of images for perceptual model', type=int)
+    parser.add_argument('--image_size', default=160, help='Size of images for perceptual model', type=int)
     parser.add_argument('--resnet_image_size', default=256, help='Size of images for the Resnet model', type=int)
     parser.add_argument('--lr', default=0.02, help='Learning rate for perceptual model', type=float)
     parser.add_argument('--decay_rate', default=0.9, help='Decay rate for learning rate', type=float)
-    parser.add_argument('--iterations', default=100, help='Number of optimization steps for each batch', type=int)
+    parser.add_argument('--iterations', default=500, help='Number of optimization steps for each batch', type=int)
     parser.add_argument('--decay_steps', default=10, help='Decay steps for learning rate decay (as a percent of iterations)', type=float)
     parser.add_argument('--load_effnet', default='data/finetuned_effnet.h5', help='Model to load for EfficientNet approximation of dlatents')
     parser.add_argument('--load_resnet', default='data/finetuned_resnet.h5', help='Model to load for ResNet approximation of dlatents')
+    parser.add_argument('--fn_model_path', default='data/20180408-102900.pb', help='Model FN')
 
     # Loss function options
-    parser.add_argument('--use_vgg_loss', default=0.4, help='Use VGG perceptual loss; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_fn_loss', default=1., help='Use VGG perceptual loss; 0 to disable, > 0 to scale.', type=float)
     parser.add_argument('--use_vgg_layer', default=9, help='Pick which VGG layer to use.', type=int)
-    parser.add_argument('--use_pixel_loss', default=1.5, help='Use logcosh image pixel loss; 0 to disable, > 0 to scale.', type=float)
-    parser.add_argument('--use_mssim_loss', default=100, help='Use MS-SIM perceptual loss; 0 to disable, > 0 to scale.', type=float)
-    parser.add_argument('--use_lpips_loss', default=100, help='Use LPIPS perceptual loss; 0 to disable, > 0 to scale.', type=float)
-    parser.add_argument('--use_l1_penalty', default=1, help='Use L1 penalty on latents; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_pixel_loss', default=0, help='Use logcosh image pixel loss; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_mssim_loss', default=0, help='Use MS-SIM perceptual loss; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_lpips_loss', default=0, help='Use LPIPS perceptual loss; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_l1_penalty', default=0, help='Use L1 penalty on latents; 0 to disable, > 0 to scale.', type=float)
 
     # Generator params
     parser.add_argument('--randomize_noise', default=False, help='Add noise to dlatents during optimization', type=bool)
@@ -59,10 +60,10 @@ def main():
 
     # Video params
     parser.add_argument('--video_dir', default='videos', help='Directory for storing training videos')
-    parser.add_argument('--output_video', default=False, help='Generate videos of the optimization process', type=bool)
+    parser.add_argument('--output_video', default=True, help='Generate videos of the optimization process', type=bool)
     parser.add_argument('--video_codec', default='MJPG', help='FOURCC-supported video codec name')
     parser.add_argument('--video_frame_rate', default=24, help='Video frames per second', type=int)
-    parser.add_argument('--video_size', default=512, help='Video size in pixels', type=int)
+    parser.add_argument('--video_size', default=256, help='Video size in pixels', type=int)
     parser.add_argument('--video_skip', default=1, help='Only write every n frames (1 = write every frame)', type=int)
 
     args, other_args = parser.parse_known_args()
@@ -87,10 +88,10 @@ def main():
 
     # Initialize generator and perceptual model
     tflib.init_tf()
-    with dnnlib.util.open_url(args.model_url, cache_dir=config.cache_dir) as f:
-        generator_network, discriminator_network, Gs_network = pickle.load(f)
+    with open(args.model_url, 'rb') as fp:
+        Gs_network = pickle.load(fp)
 
-    generator = Generator(Gs_network, args.batch_size, clipping_threshold=args.clipping_threshold, tiled_dlatent=args.tile_dlatents, model_res=args.model_res, randomize_noise=args.randomize_noise)
+    generator = Generator(Gs_network, args.batch_size, tiled_dlatent=args.tile_dlatents, model_res=args.model_res, randomize_noise=args.randomize_noise)
     if (args.dlatent_avg != ''):
         generator.set_dlatent_avg(np.load(args.dlatent_avg))
 
