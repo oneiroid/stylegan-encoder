@@ -105,11 +105,8 @@ class PerceptualModel:
         self.sess.run([self._reset_global_step])
 
         generated_image_tensor = generator.generated_image
-        generated_image = tf.image.resize_nearest_neighbor(generated_image_tensor,
+        generated_image = tf.image.resize_bilinear(generated_image_tensor,
                                                                   (self.img_size, self.img_size), align_corners=True)
-        generated_image_w = tf.image.per_image_standardization(generated_image)
-        #generated_image = tf.image.adjust_saturation(generated_image, 0)
-        #generated_image = tf.image.grayscale_to_rgb(tf.image.rgb_to_grayscale(generated_image))
 
         self.ref_img = tf.get_variable('ref_img', shape=generated_image.shape,
                                                 dtype='float32', initializer=tf.initializers.zeros())
@@ -122,7 +119,9 @@ class PerceptualModel:
             with tf.gfile.FastGFile(self.fn_model_path, 'rb') as f:
                 graph_def = tf.GraphDef()
                 graph_def.ParseFromString(f.read())
-                tf.import_graph_def(graph_def, input_map={'input': generated_image_w, 'phase_train': tf.constant(False)}, name='')
+                gen_img_fn = tf.image.resize_bilinear(generated_image_tensor, (160, 160), align_corners=True)
+                gen_img_fn_w = tf.image.per_image_standardization(gen_img_fn)
+                tf.import_graph_def(graph_def, input_map={'input': gen_img_fn_w, 'phase_train': tf.constant(False)}, name='')
             # self.perceptual_model = facenet.load_model(self.fn_model_path, input_map={'input': generated_image_w, 'phase_train': tf.constant(False)})
 
             self.images_placeholder = self.sess.graph.get_tensor_by_name("input:0")
@@ -189,7 +188,8 @@ class PerceptualModel:
         loaded_image = load_images(images_list, self.img_size)
         image_features = None
         if self.perceptual_model is not None or True:
-            imgs = tf.image.per_image_standardization(np.array(loaded_image)).eval(session=self.sess)
+            imgs_fn = tf.image.resize_bilinear(np.array(loaded_image), (160, 160), align_corners=True)
+            imgs = tf.image.per_image_standardization(imgs_fn).eval(session=self.sess)
             feed_dict = { self.images_placeholder:  np.array(imgs), self.phase_train_placeholder:False}
             image_features = self.sess.run(self.embeddings, feed_dict=feed_dict)
             weight_mask = np.ones(self.features_weight.shape)

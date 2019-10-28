@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--batch_size', default=1, help='Batch size for generator and perceptual model', type=int)
 
     # Perceptual model params
-    parser.add_argument('--image_size', default=160, help='Size of images for perceptual model', type=int)
+    parser.add_argument('--image_size', default=512, help='Size of images for perceptual model', type=int)
     parser.add_argument('--resnet_image_size', default=256, help='Size of images for the Resnet model', type=int)
     parser.add_argument('--lr', default=0.02, help='Learning rate for perceptual model', type=float)
     parser.add_argument('--decay_rate', default=0.9, help='Decay rate for learning rate', type=float)
@@ -105,71 +105,76 @@ def main():
     ff_model = None
 
     # Optimize (only) dlatents by minimizing perceptual loss between reference and generated images in feature space
-    for images_batch in tqdm(split_to_batches(ref_images, args.batch_size), total=len(ref_images)//args.batch_size):
-        names = [os.path.splitext(os.path.basename(x))[0] for x in images_batch]
-        if args.output_video:
-          video_out = {}
-          for name in names:
-            video_out[name] = cv2.VideoWriter(os.path.join(args.video_dir, f'{name}.avi'),cv2.VideoWriter_fourcc(*args.video_codec), args.video_frame_rate, (args.video_size,args.video_size))
 
-        perceptual_model.set_reference_images(images_batch)
-        dlatents = None
-        if (args.load_last != ''): # load previous dlatents for initialization
-            for name in names:
-                dl = np.expand_dims(np.load(os.path.join(args.load_last, f'{name}.npy')),axis=0)
-                if (dlatents is None):
-                    dlatents = dl
-                else:
-                    dlatents = np.vstack((dlatents,dl))
-        else:
-            if (ff_model is None):
-                if os.path.exists(args.load_resnet):
-                    print("Loading ResNet Model:")
-                    ff_model = load_model(args.load_resnet)
-                    from keras.applications.resnet50 import preprocess_input
-            if (ff_model is None):
-                if os.path.exists(args.load_effnet):
-                    import efficientnet
-                    print("Loading EfficientNet Model:")
-                    ff_model = load_model(args.load_effnet)
-                    from efficientnet import preprocess_input
-            if (ff_model is not None): # predict initial dlatents with ResNet model
-                dlatents = ff_model.predict(preprocess_input(load_images(images_batch,image_size=args.resnet_image_size)))
-        if dlatents is not None:
-            generator.set_dlatents(dlatents)
-        op = perceptual_model.optimize(generator.dlatent_variable, iterations=args.iterations)
-        pbar = tqdm(op, leave=False, total=args.iterations)
-        vid_count = 0
-        best_loss = None
-        best_dlatent = None
-        for loss_dict in pbar:
-            pbar.set_description(" ".join(names) + ": " + "; ".join(["{} {:.4f}".format(k, v)
-                    for k, v in loss_dict.items()]))
-            if best_loss is None or loss_dict["loss"] < best_loss:
-                best_loss = loss_dict["loss"]
-                best_dlatent = generator.get_dlatents()
-            if args.output_video and (vid_count % args.video_skip == 0):
-              batch_frames = generator.generate_images()
-              for i, name in enumerate(names):
-                video_frame = PIL.Image.fromarray(batch_frames[i], 'RGB').resize((args.video_size,args.video_size),PIL.Image.LANCZOS)
+    images_batch = ref_images
+    names = [os.path.splitext(os.path.basename(x))[0] for x in images_batch]
+    if args.output_video:
+      video_out = {}
+      for name in names:
+        video_out[name] = cv2.VideoWriter(os.path.join(args.video_dir, f'{name}.avi'),cv2.VideoWriter_fourcc(*args.video_codec), args.video_frame_rate, (args.video_size,args.video_size))
+
+    perceptual_model.set_reference_images(images_batch)
+    dlatents = None
+    if (args.load_last != ''): # load previous dlatents for initialization
+        for name in names:
+            dl = np.expand_dims(np.load(os.path.join(args.load_last, f'{name}.npy')),axis=0)
+            if (dlatents is None):
+                dlatents = dl
+            else:
+                dlatents = np.vstack((dlatents,dl))
+    else:
+        if (ff_model is None):
+            if os.path.exists(args.load_resnet):
+                print("Loading ResNet Model:")
+                ff_model = load_model(args.load_resnet)
+                from keras.applications.resnet50 import preprocess_input
+        if (ff_model is None):
+            if os.path.exists(args.load_effnet):
+                import efficientnet
+                print("Loading EfficientNet Model:")
+                ff_model = load_model(args.load_effnet)
+                from efficientnet import preprocess_input
+        if (ff_model is not None): # predict initial dlatents with ResNet model
+            dlatents = ff_model.predict(preprocess_input(load_images(images_batch,image_size=args.resnet_image_size)))
+    if dlatents is not None:
+        generator.set_dlatents(dlatents)
+
+    op = perceptual_model.optimize(generator.dlatent_variable, iterations=args.iterations)
+    vid_count = 0
+    best_loss = None
+    best_dlatent = None
+    for i in range(args.iterations):
+        loss_dict = op()
+        descr = " ".join(names) + ": " + "; ".join(["{} {:.4f}".format(k, v) for k, v in loss_dict.items()])
+        print(descr)
+
+        if best_loss is None or loss_dict["loss"] < best_loss:
+            best_loss = loss_dict["loss"]
+            best_dlatent = generator.get_dlatents()
+        if args.output_video and (vid_count % args.video_skip == 0):
+            batch_frames = generator.generate_images()
+            for i, name in enumerate(names):
+                video_frame = PIL.Image.fromarray(batch_frames[i], 'RGB').resize((args.video_size, args.video_size),
+                                                                                 PIL.Image.LANCZOS)
                 video_out[name].write(cv2.cvtColor(np.array(video_frame).astype('uint8'), cv2.COLOR_RGB2BGR))
-            generator.stochastic_clip_dlatents()
-        print(" ".join(names), " Loss {:.4f}".format(best_loss))
+        generator.stochastic_clip_dlatents()
 
-        if args.output_video:
-            for name in names:
-                video_out[name].release()
+    print(" ".join(names), " Loss {:.4f}".format(best_loss))
 
-        # Generate images from found dlatents and save them
-        generator.set_dlatents(best_dlatent)
-        generated_images = generator.generate_images()
-        generated_dlatents = generator.get_dlatents()
-        for img_array, dlatent, img_name in zip(generated_images, generated_dlatents, names):
-            img = PIL.Image.fromarray(img_array, 'RGB')
-            img.save(os.path.join(args.generated_images_dir, f'{img_name}.png'), 'PNG')
-            np.save(os.path.join(args.dlatent_dir, f'{img_name}.npy'), dlatent)
+    if args.output_video:
+        for name in names:
+            video_out[name].release()
 
-        generator.reset_dlatents()
+    # Generate images from found dlatents and save them
+    generator.set_dlatents(best_dlatent)
+    generated_images = generator.generate_images()
+    generated_dlatents = generator.get_dlatents()
+    for img_array, dlatent, img_name in zip(generated_images, generated_dlatents, names):
+        img = PIL.Image.fromarray(img_array, 'RGB')
+        img.save(os.path.join(args.generated_images_dir, f'{img_name}.png'), 'PNG')
+        np.save(os.path.join(args.dlatent_dir, f'{img_name}.npy'), dlatent)
+
+    generator.reset_dlatents()
 
 
 if __name__ == "__main__":
