@@ -22,6 +22,9 @@ def load_images(images_list, image_size=160):
 def tf_custom_l1_loss(img1,img2):
   return tf.math.reduce_mean(tf.math.abs(img2-img1), axis=None)
 
+def tf_euclidian_dist(emb1, emb2):
+    return tf.reduce_sum(tf.square(tf.subtract(emb1, emb2)), 1)
+
 def tf_custom_logcosh_loss(img1,img2):
   return tf.math.reduce_mean(tf.keras.losses.logcosh(img1,img2))
 
@@ -138,7 +141,7 @@ class PerceptualModel:
         self.loss = 0
         # L1 loss on VGG16 features
         if (self.fn_loss is not None):
-            self.loss += self.fn_loss * tf_custom_l1_loss(self.features_weight * self.ref_img_features, self.features_weight * self.embeddings)
+            self.loss += self.fn_loss * tf_euclidian_dist(self.features_weight * self.ref_img_features, self.features_weight * self.embeddings)
         # + logcosh loss on image pixels
         if (self.pixel_loss is not None):
             self.loss += self.pixel_loss * tf_custom_logcosh_loss(self.ref_weight * self.ref_img, self.ref_weight * generated_image)
