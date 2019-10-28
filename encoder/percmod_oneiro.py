@@ -23,7 +23,7 @@ def tf_custom_l1_loss(img1,img2):
   return tf.math.reduce_mean(tf.math.abs(img2-img1), axis=None)
 
 def tf_euclidian_dist(emb1, emb2):
-    return tf.reduce_sum(tf.square(tf.subtract(emb1, emb2)), 1)
+    return tf.reduce_sum(tf.square(tf.subtract(emb1, emb2)), axis=None)
 
 def tf_custom_logcosh_loss(img1,img2):
   return tf.math.reduce_mean(tf.keras.losses.logcosh(img1,img2))
@@ -72,7 +72,6 @@ class PerceptualModel:
         self.ref_weight = None
         self.perceptual_model = None
         self.ref_img_features = None
-        self.features_weight = None
         self.loss = None
 
         if self.face_mask:
@@ -129,19 +128,15 @@ class PerceptualModel:
             self.embeddings = self.sess.graph.get_tensor_by_name("embeddings:0")
             #self.embeddings.set_shape((1, 512))
             self.phase_train_placeholder = self.sess.graph.get_tensor_by_name("phase_train:0")
-
             self.ref_img_features = tf.get_variable('ref_img_features', shape=(1, 512),
                                                 dtype='float32', initializer=tf.initializers.zeros())
-            self.features_weight = tf.get_variable('features_weight', shape=(1, 512),
-                                               dtype='float32', initializer=tf.initializers.zeros())
-            self.sess.run([self.ref_img_features.initializer, self.features_weight.initializer])
+            self.sess.run([self.ref_img_features.initializer])
             self.add_placeholder("ref_img_features")
-            self.add_placeholder("features_weight")
 
         self.loss = 0
         # L1 loss on VGG16 features
         if (self.fn_loss is not None):
-            self.loss += self.fn_loss * tf_euclidian_dist(self.features_weight * self.ref_img_features, self.features_weight * self.embeddings)
+            self.loss += self.fn_loss * tf_euclidian_dist(self.ref_img_features, self.embeddings)
         # + logcosh loss on image pixels
         if (self.pixel_loss is not None):
             self.loss += self.pixel_loss * tf_custom_logcosh_loss(self.ref_weight * self.ref_img, self.ref_weight * generated_image)
@@ -193,7 +188,6 @@ class PerceptualModel:
             imgs = tf.image.per_image_standardization(imgs_fn).eval(session=self.sess)
             feed_dict = { self.images_placeholder:  np.array(imgs), self.phase_train_placeholder:False}
             image_features = self.sess.run(self.embeddings, feed_dict=feed_dict)
-            weight_mask = np.ones(self.features_weight.shape)
 
         if self.face_mask:
             image_mask = np.zeros(self.ref_weight.shape)
@@ -224,26 +218,7 @@ class PerceptualModel:
         else:
             image_mask = np.ones(self.ref_weight.shape)
 
-        if len(images_list) != self.batch_size:
-            if image_features is not None:
-                features_space = list(self.features_weight.shape[1:])
-                existing_features_shape = [len(images_list)] + features_space
-                empty_features_shape = [self.batch_size - len(images_list)] + features_space
-                existing_examples = np.ones(shape=existing_features_shape)
-                empty_examples = np.zeros(shape=empty_features_shape)
-                weight_mask = np.vstack([existing_examples, empty_examples])
-                image_features = np.vstack([image_features, np.zeros(empty_features_shape)])
-
-            images_space = list(self.ref_weight.shape[1:])
-            existing_images_space = [len(images_list)] + images_space
-            empty_images_space = [self.batch_size - len(images_list)] + images_space
-            existing_images = np.ones(shape=existing_images_space)
-            empty_images = np.zeros(shape=empty_images_space)
-            image_mask = image_mask * np.vstack([existing_images, empty_images])
-            loaded_image = np.vstack([loaded_image, np.zeros(empty_images_space)])
-
         if image_features is not None:
-            self.assign_placeholder("features_weight", weight_mask)
             self.assign_placeholder("ref_img_features", image_features)
         self.assign_placeholder("ref_weight", image_mask)
         self.assign_placeholder("ref_img", loaded_image)
