@@ -1,5 +1,4 @@
 import os, sys
-sys.path.append('C:\\workspace\\src')
 import bz2
 import PIL.Image
 import numpy as np
@@ -9,7 +8,6 @@ from keras.utils import get_file
 from keras.applications.vgg16 import VGG16, preprocess_input
 import keras.backend as K
 import traceback
-from lib.facenet.src import facenet
 
 def load_images(images_list, image_size=160):
     loaded_images = list()
@@ -44,7 +42,7 @@ class PerceptualModel:
         self.decay_steps = args.decay_steps
         self.img_size = args.image_size
         self.fn_loss = args.use_fn_loss
-        self.fn_model_path = args.fn_model
+        self.fn_model_path = args.fn_model_path
 
         self.face_mask = args.face_mask
         self.use_grabcut = args.use_grabcut

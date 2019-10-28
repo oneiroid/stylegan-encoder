@@ -42,7 +42,7 @@ def main():
     # Loss function options
     parser.add_argument('--use_fn_loss', default=1., help='Use VGG perceptual loss; 0 to disable, > 0 to scale.', type=float)
     parser.add_argument('--use_vgg_layer', default=9, help='Pick which VGG layer to use.', type=int)
-    parser.add_argument('--use_pixel_loss', default=0, help='Use logcosh image pixel loss; 0 to disable, > 0 to scale.', type=float)
+    parser.add_argument('--use_pixel_loss', default=1.5, help='Use logcosh image pixel loss; 0 to disable, > 0 to scale.', type=float)
     parser.add_argument('--use_mssim_loss', default=0, help='Use MS-SIM perceptual loss; 0 to disable, > 0 to scale.', type=float)
     parser.add_argument('--use_lpips_loss', default=0, help='Use LPIPS perceptual loss; 0 to disable, > 0 to scale.', type=float)
     parser.add_argument('--use_l1_penalty', default=0, help='Use L1 penalty on latents; 0 to disable, > 0 to scale.', type=float)
@@ -143,7 +143,7 @@ def main():
     vid_count = 0
     best_loss = None
     best_dlatent = None
-    for i in range(args.iterations):
+    for loss_dict in op:
         loss_dict = op()
         descr = " ".join(names) + ": " + "; ".join(["{} {:.4f}".format(k, v) for k, v in loss_dict.items()])
         print(descr)
