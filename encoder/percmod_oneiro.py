@@ -129,7 +129,7 @@ class PerceptualModel:
             #self.embeddings.set_shape((1, 512))
             self.phase_train_placeholder = self.sess.graph.get_tensor_by_name("phase_train:0")
             self.ref_img_features = tf.get_variable('ref_img_features', shape=(1, 512),
-                                                dtype='float32', initializer=tf.initializers.zeros())
+                                                dtype='float32', initializer=tf.initializers.random_uniform())
             self.sess.run([self.ref_img_features.initializer])
             self.add_placeholder("ref_img_features")
 
@@ -234,3 +234,11 @@ class PerceptualModel:
         for _ in range(iterations):
             _, loss, lr = self.sess.run(fetch_ops)
             yield {"loss":loss, "lr": lr}
+
+    def get_fetch_ops(self, vars_to_optimize):
+        vars_to_optimize = vars_to_optimize if isinstance(vars_to_optimize, list) else [vars_to_optimize]
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        min_op = optimizer.minimize(self.loss, var_list=[vars_to_optimize])
+        self.sess.run([tf.variables_initializer(optimizer.variables()), self._reset_global_step])
+        fetch_ops = [min_op, self.loss, self.learning_rate]
+        return fetch_ops

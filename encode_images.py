@@ -139,14 +139,34 @@ def main():
     if dlatents is not None:
         generator.set_dlatents(dlatents)
 
+    fetch_ops = perceptual_model.get_fetch_ops(generator.dlatent_variable)
+    vid_count = 0
+    best_loss = None
+    best_dlatent = None
+    for idx_iter in range(args.iterations):
+        res = perceptual_model.sess.run(fetch_ops)
+        _, loss, lr = res
+        if best_loss is None or loss < best_loss:
+            best_loss = loss
+            best_dlatent = generator.get_dlatents()
+        if args.output_video and (vid_count % args.video_skip == 0):
+            batch_frames = generator.generate_images()
+            for i, name in enumerate(names):
+                video_frame = PIL.Image.fromarray(batch_frames[i], 'RGB').resize((args.video_size, args.video_size),
+                                                                                 PIL.Image.LANCZOS)
+                video_out[name].write(cv2.cvtColor(np.array(video_frame).astype('uint8'), cv2.COLOR_RGB2BGR))
+
+    '''
     op = perceptual_model.optimize(generator.dlatent_variable, iterations=args.iterations)
     vid_count = 0
     best_loss = None
     best_dlatent = None
+    iternow=0
     for loss_dict in op:
         #descr = " ".join(names) + ": " + "; ".join(["{} {:.4f}".format(k, v) for k, v in loss_dict.items()])
         print(loss_dict)
-
+        print(iternow)
+        iternow += 1
         if best_loss is None or loss_dict["loss"] < best_loss:
             best_loss = loss_dict["loss"]
             best_dlatent = generator.get_dlatents()
@@ -160,6 +180,7 @@ def main():
         #generator.stochastic_clip_dlatents()
 
     #print(" ".join(names), " Loss {:.4f}".format(best_loss))
+    '''
 
     if args.output_video:
         for name in names:
